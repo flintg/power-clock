@@ -1,8 +1,5 @@
-[string]$url = "";
-[string]$client = "Powershell";
-[string]$database = "";
-[string]$userabbr = "";
-[string]$password = "";
+[string]$useragent = "com.eagleflint.ps-clock/0.5.1 (PowerShell)";
+[string]$appsettings = "WebClock,0.5.1,com.eagleflint.ps-clock";
 [string]$requestEndpoint = "";
 [string]$uri = "";
 [string]$requestString = "";
@@ -13,12 +10,24 @@
 [int32]$GMTOffset = 0;
 [string]$Lat = "";
 [string]$Lon = "";
+[string]$credPath = ".\ps-clock.cred.xml";
+[string]$settingsPath = ".\ps-Clock.json";
+[boolean]$settingsChanged = $false;
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession;
+$settingsJson = @"
+{
+	"url": "",
+	"user": "",
+	"db": "",
+	"savepwd": null
+}
+"@
+$settingsObject = $settingsJson | ConvertFrom-Json
+
 
 function Main {
+	LoadSettings;
 	GetLocation;
-	Write-Host "Ay matey! Yer reportin ye location as $($script:Lat) Latitude, $($script:Lon) Longitude.";
-	
 	DoLogin;
 	
 	Write-Host "Success:$($script:success)";
@@ -38,15 +47,18 @@ function Main {
 	} else {
 		Write-Host "Arr! There be a problem with ye request!  The cap'ns response be [$($response.StatusCode) - $($response.StatusDescription)]: $($response.Content)";
 	}
+
+	if ($script:settingsChanged -eq $true) {
+		SaveSettings;
+	}
 }
 
 function WebClock {
 	$requestEndpoint = "EPclkTable";
-	$uri = "$($script:url)$($requestEndpoint)";
-	$requestString = "ACTION=Get";
-	$requestString = "$($requestString)&client=Powershell";
+	$uri = "$($script:settingsObject.url)$($requestEndpoint)";
+	$requestString = "Action=Get";
 
-	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestString -WebSession $session;
+	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestString -WebSession $script:session -UserAgent $script:useragent;
 
 	$rjson = $response.Content | ConvertFrom-Json;
 	  
@@ -244,12 +256,9 @@ function WebClock {
 	}
 	
 	$requestEndpoint = "EPclkTable";
-	$uri = "$($script:url)$($requestEndpoint)";
+	$uri = "$($script:settingsObject.url)$($requestEndpoint)";
 	$requestString = "ACTION=Add";
-#	$requestString = "$($requestString)&DATABASE=$($database)";
 	$requestString = "$($requestString)&EPCLK_GMTOFFSET=$($tzOffset)";
-#	$requestString = "$($requestString)&USERABBR=$($userabbr)";
-#	$requestString = "$($requestString)&PASSWORD=$($password)";
 	$requestString = "$($requestString)&EPCLK_STATUS=$($status)";
 	$requestString = "$($requestString)&EPCLK_PRITEMID=$($earnID)";
 	if ($status -ge 1) {
@@ -262,9 +271,8 @@ function WebClock {
 		$requestString = "$($requestString)&EPCLK_POSTMASK=$($mask)";
 		$requestString = "$($requestString)&EPCLK_AMOUNT=$($amount)";
 	}
-	$requestString = "$($requestString)&client=Powershell";
 	
-	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestString -WebSession $session;
+	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestString -WebSession $script:session -UserAgent $script:useragent;
 	
 	$rjson = $response.Content | ConvertFrom-Json;
 	
@@ -282,33 +290,28 @@ function WebClock {
 }
 
 function DoLogin {
-
-	$urlEntry = Read-Host -Prompt "URL [$($script:url)]";
-	if (-Not ([string]::IsNullOrWhiteSpace($urlEntry))) {
-		$script:url = [string]$urlEntry;
-	}
-	$databaseEntry = Read-Host -Prompt "Database [$($script:database)]";
-	if (-Not ([string]::IsNullOrWhiteSpace($databaseEntry))) {
-		$script:database = [string]$databaseEntry;
-	}
-	$userabbrEntry = Read-Host -Prompt "User Abbr [$($script:userabbr)]";
-	if (-Not ([string]::IsNullOrWhiteSpace($userabbrEntry))) {
-		$script:userabbr = [string]$userabbrEntry;
-	}
-	$passwordEntry = Read-Host -Prompt "Password" -AsSecureString;
-	$script:password = [string][Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($passwordEntry));
 	
+	if ($script:settingsObject.savepwd -eq $true) {
+		$cred = Import-CliXml $script:credPath;
+		$loginPassword = $cred.Password;
+	} else {
+		$loginPassword = Read-Host -Prompt "Password" -AsSecureString;
+	}
+	$loginPassword = [string][Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($loginPassword));
+
 	$requestEndpoint = "AccuConfig";
-	$uri = "$($script:url)$($requestEndpoint)";
+	$uri = "$($script:settingsObject.url)$($requestEndpoint)";
 	$requestString = "ACTION=Login";
-	$requestString = "$($requestString)&database=$($script:database)";
-	$requestString = "$($requestString)&userabbr=$($script:userabbr)";
-	$requestString = "$($requestString)&password=$($script:password)";
-	$requestString = "$($requestString)&client=$($script:client)";
+	if (-Not ($script:settingsObject.db -eq "<no database>")) {
+		$requestString = "$($requestString)&database=$($script:settingsObject.db)";
+	}
+	$requestString = "$($requestString)&userabbr=$($script:settingsObject.user)";
+	$requestString = "$($requestString)&password=$($loginPassword)";
 	$requestString = "$($requestString)&Latitude=$($script:Lat)";
 	$requestString = "$($requestString)&Longitude=$($script:Lon)";
+	$requestString = "$($requestString)&appsettings=$($script:appsettings)";
 
-	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestString -WebSession $session;
+	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestString -WebSession $script:session -UserAgent $script:useragent;
 
 	$rjson = $response.Content | ConvertFrom-Json;
 	
@@ -352,6 +355,103 @@ function GetLocation {
 		$script:Lat = [string]$GeoWatcher.Position.Location.Latitude;
 		$script:Lon = [string]$GeoWatcher.Position.Location.Longitude;
 	}
+	Write-Host "Ay matey! Yer reportin ye location as $($script:Lat) Latitude, $($script:Lon) Longitude.";
+}
+
+function LoadSettings {
+
+	if (Test-Path -Path $script:settingsPath) {
+		$script:settingsObject = Get-Content -Raw -Path $script:settingsPath | ConvertFrom-Json;
+	}
+
+	if ([string]::IsNullOrWhiteSpace($script:settingsObject.url)) {
+		RequestURL;
+	}
+
+	if ([string]::IsNullOrWhiteSpace($script:settingsObject.user)) {
+		RequestUser;
+	}
+
+	if ([string]::IsNullOrWhiteSpace($script:settingsObject.savepwd)) {
+		RequestSavePassword;
+	}
+
+	if ((-Not (Test-Path -Path $script:credPath)) -and ($script:settingsObject.savepwd -eq $true)) {
+		RequestPassword;
+	}
+
+	if ([string]::IsNullOrWhiteSpace($script:settingsObject.db)) {
+		RequestDB;
+	}
+	
+	if ($script:settingsChanged) {
+		SaveSettings;
+	}
+}
+
+function SaveSettings {
+	Set-Content $script:settingsPath ($script:settingsObject | ConvertTo-Json );
+	$script:settingsChanged = $false;
+}
+
+function RequestURL {
+	$entryURL = Read-Host -Prompt "URL (e.g. https://clock.example.com/)";
+	if ([string]::IsNullOrWhiteSpace($entryURL)) {
+		Write-Host "Arr! Walk yer fingers, or ye be walkin' the plank!"
+		RequestURL; #URL is required
+	} else {
+		if (-Not ($entryURL.substring($entryURL.length - 1, 1) -eq "/")) {
+			$entryURL = "$($entryURL)/";
+		}
+		$script:settingsObject.url = [string]$entryURL;
+		$script:settingsChanged = $true;
+	}
+}
+
+function RequestUser {
+	$entryUser = Read-Host -Prompt "Username";
+	if ([string]::IsNullOrWhiteSpace($entryUser)) {
+		Write-Host "Arr! Walk yer fingers, or ye be walkin' the plank!"
+		RequestUser; #User is required
+	} else {
+		$script:settingsObject.user = [string]$entryUser;
+		$script:settingsChanged = $true;
+	}
+}
+
+function RequestSavePassword {
+	$entrySavePwd = Read-Host -Prompt "Save password for easier login (Yes / No)?";
+	if ([string]::IsNullOrWhiteSpace($entrySavePwd)) {
+		RequestSavePassword;
+	} else {
+		$entrySavePwd.ToUpper();
+		if ($entrySavePwd.Substring(0,1) -eq "Y") {
+			$script:settingsObject.savepwd = $true;
+			$script:settingsChanged = $true;
+		} elseif ($entrySavePwd.Substring(0,1) -eq "N") {
+			$script:settingsObject.savepwd = $false;
+			$script:settingsChanged = $true;
+		} else {
+			Write-Host "Arr! That be the wrong answer, matey! [$($entrySavePwd)]";
+			RequestSavePassword;
+		}
+	}
+}
+
+function RequestPassword {
+	$credUser = $script:settingsObject.user;
+	$cred = Get-Credential -UserName $credUser;
+	$cred | Export-CliXml $script:credPath;
+}
+
+function RequestDB {
+	$entryDB = Read-Host -Prompt "Database";
+	if ([string]::IsNullOrWhiteSpace($entryDB)) {
+		$entryDB = "<no database>"
+		Write-Host "Ay! I suppose there be no persuadin' ya."
+	}
+	$script:settingsObject.db = [string]$entryDB;
+	$script:settingsChanged = $true;
 }
 
 Main;
