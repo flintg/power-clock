@@ -2,7 +2,6 @@
 [string]$appsettings = "WebClock,0.5.1,com.eagleflint.ps-clock";
 [string]$requestEndpoint = "";
 [string]$uri = "";
-[string]$requestString = "";
 [boolean]$isDefault = $false;
 [string]$version = "";
 [boolean]$success = $false;
@@ -10,6 +9,7 @@
 [int32]$GMTOffset = 0;
 [string]$Lat = "";
 [string]$Lon = "";
+[string]$UUID = "";
 [string]$credPath = ".\ps-clock.cred.xml";
 [string]$settingsPath = ".\ps-Clock.json";
 [boolean]$settingsChanged = $false;
@@ -23,11 +23,12 @@ $settingsJson = @"
 }
 "@
 $settingsObject = $settingsJson | ConvertFrom-Json
-
+$requestHeaders = @{"X-Requested-With"="com.eagleflint.Power-Clock"};
 
 function Main {
 	LoadSettings;
 	GetLocation;
+	GetDeviceID;
 	DoLogin;
 	
 	Write-Host "Success:$($script:success)";
@@ -54,11 +55,13 @@ function Main {
 }
 
 function WebClock {
+	$requestBody = [ordered]@{}
+
 	$requestEndpoint = "EPclkTable";
 	$uri = "$($script:settingsObject.url)$($requestEndpoint)";
-	$requestString = "Action=Get";
+	$requestBody.Add("Action","Get");
 
-	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestString -WebSession $script:session -UserAgent $script:useragent;
+	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestBody -WebSession $script:session -UserAgent $script:useragent -Headers $script:requestHeaders;
 
 	$rjson = $response.Content | ConvertFrom-Json;
 	  
@@ -66,20 +69,20 @@ function WebClock {
 	for($c=0;$c -le $cfg.Count-1;$c++) {
 		switch ($cfg.Name[$c]){
 			"UseDistributionTable"	{[boolean]$useDistributionTable=[boolean]$cfg.Value[$c]}
-			"UseAccount"			{[boolean]$useAccount=[boolean]$cfg.Value[$c]}
+			"UseAccount"			{[boolean]$useAccount=[Int32]$cfg.Value[$c]}
 			"AccountPicture"		{[string]$accountPicture=[string]$cfg.Value[$c]}
-			"UseEarning"			{[boolean]$useEarning=[boolean]$cfg.Value[$c]}
+			"UseEarning"			{[Int32]$useEarning=[Int32]$cfg.Value[$c]}
 		}
 	}
-	[boolean]$useMemo = [boolean]$rjson.EPclk.EPCLK_USEMEMO;
-	[boolean]$usePosition = [boolean]$rjson.EPclk.EPCLK_USEPOSITION;
-	[boolean]$useRate = [boolean]$rjson.EPclk.EPCLK_USERATE;
-	[boolean]$useAmount = [boolean]$rjson.EPclk.EPCLK_USEAMOUNT;
-	[boolean]$useType = [boolean]$rjson.EPclk.EPCLK_USETYPE;
-	[boolean]$useHours = [boolean]$rjson.EPclk.EPCLK_USEHOURS;
-	[boolean]$useClient = [boolean]$rjson.EPclk.EPCLK_USECLIENT;
-	[int32]$tzOffset = $script:GMTOffset; #360; #Hardcoded, because I haven't figured out how to get this value in minutes automatically
-	[string]$clockTime = [string]$rjson.EPclk.EPCLK_CLOCKDATE;
+	[boolean]$useAmount		= [boolean]$rjson.EPclk.EPCLK_USEAMOUNT;
+	[boolean]$useClient		= [boolean]$rjson.EPclk.EPCLK_USECLIENT;
+	[boolean]$useHours		= [boolean]$rjson.EPclk.EPCLK_USEHOURS;
+	[boolean]$useMemo		= [boolean]$rjson.EPclk.EPCLK_USEMEMO;
+	[boolean]$usePosition	= [boolean]$rjson.EPclk.EPCLK_USEPOSITION;
+	[boolean]$useRate		= [boolean]$rjson.EPclk.EPCLK_USERATE;
+	[boolean]$useType		= [boolean]$rjson.EPclk.EPCLK_USETYPE;
+	[int32]$tzOffset		= $script:GMTOffset;
+	[string]$clockTime		= [string]$rjson.EPclk.EPCLK_CLOCKDATE;
 	
 	[int32]$status = [int32]$json.EPclk.EPCLK_STATUS;
 	$isDefault = $false;
@@ -110,7 +113,7 @@ function WebClock {
 	if ($status -ge 1) {
 		$direction = "in";
 		[int32]$earning = 0;
-		if ($useEarning -eq $true) {
+		if ($useEarning -eq 1) {
 			$isDefault = $false;
 			$earnings = $rjson.EPclk.EPclkItems;
 			Write-Host "Choose which earning item to use:";
@@ -143,7 +146,7 @@ function WebClock {
 			$useRate = [boolean]$earnings.EPERN_USERATE[$earning];
 			$useDistributionTable = [boolean]$earnings.EPERN_USEDISTRIBUTION[$earning];
 			$useAccount = [boolean]$earnings.EPERN_USEACCOUNT[$earning];
-			$useAmont = [boolean]$earnings.EPERN_USEAMOUNT[$earning];
+			$useAmount = [boolean]$earnings.EPERN_USEAMOUNT[$earning];
 			$useType = [boolean]$earnings.EPERN_USETYPE[$earning];
 			$useHours = [boolean]$earnings.EPERN_USEHOURS[$earning];
 			$useClient = [boolean]$earnings.EPERN_USECLIENT[$earning];
@@ -204,6 +207,8 @@ function WebClock {
 		[string]$mask = "";
 		if ($useAccount -eq $true) {
 			$mask = Read-Host "Enter an account or mask as $($accountPicture) or blank";
+		} else {
+			$mask = $rjson.EPclk.EPCLK_ACCOUNT;
 		}
 		
 		[decimal]$amount = 0.00;
@@ -257,22 +262,23 @@ function WebClock {
 	
 	$requestEndpoint = "EPclkTable";
 	$uri = "$($script:settingsObject.url)$($requestEndpoint)";
-	$requestString = "ACTION=Add";
-	$requestString = "$($requestString)&EPCLK_GMTOFFSET=$($tzOffset)";
-	$requestString = "$($requestString)&EPCLK_STATUS=$($status)";
-	$requestString = "$($requestString)&EPCLK_PRITEMID=$($earnID)";
+	$requestBody = [ordered]@{}
+	$requestBody.Add("Action","Add");
+	$requestBody.Add("EPCLK_GMTOFFSE","$($tzOffset)");
+	$requestBody.Add("EPCLK_STATUS","$($status)");
+	$requestBody.Add("EPCLK_PRITEMID","$($earnID)");
 	if ($status -ge 1) {
-		$requestString = "$($requestString)&EPCLK_CLIENTID=$($client)"; # Not yet supported
-		$requestString = "$($requestString)&EPCLK_MEMO=$($memo)";
-		$requestString = "$($requestString)&EPCLK_TYPEID=$($rjson.EPclk.EPclkTypes.AFTYP_TYPEID[$type])";
-		$requestString = "$($requestString)&EPCLK_FUNDINGSOURCEID=$($rjson.EPclk.EPclkPositions.PCPOS_EMPLOYEEPOSITIONID[$position])";
-		$requestString = "$($requestString)&EPCLK_RATE=$($rate)";
-		$requestString = "$($requestString)&EPCLK_DISTRIBUTIONTABLEID=$($rjson.EPclk.EPclkDists.GLDTB_DISTRIBUTIONTABLEID[$dist])";
-		$requestString = "$($requestString)&EPCLK_POSTMASK=$($mask)";
-		$requestString = "$($requestString)&EPCLK_AMOUNT=$($amount)";
+		$requestBody.Add("EPCLK_AMOUNT","$(if ($useAmount -eq $true){$amount}else{})");
+		$requestBody.Add("EPCLK_CLIENTID","$(if ($useClient -eq $true){$client}else{})"); # Not yet supported
+		$requestBody.Add("EPCLK_DISTRIBUTIONTABLEID","$(if ($useDistributionTable -eq $true){$rjson.EPclk.EPclkDists.GLDTB_DISTRIBUTIONTABLEID[$dist]}else{})");
+		$requestBody.Add("EPCLK_FUNDINGSOURCEID","$($rjson.EPclk.EPclkPositions.PCPOS_EMPLOYEEPOSITIONID[$position])");
+		$requestBody.Add("EPCLK_MEMO","$($memo)");
+		$requestBody.Add("EPCLK_RATE","$(if($useRate -eq $true){$rate}else{})");
+		$requestBody.Add("EPCLK_TYPEID","$($rjson.EPclk.EPclkTypes.AFTYP_TYPEID[$type])");
+		$requestBody.Add("EPCLK_ACCOUNT","$($mask)");
 	}
 	
-	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestString -WebSession $script:session -UserAgent $script:useragent;
+	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestBody -WebSession $script:session -UserAgent $script:useragent -Headers $script:requestHeaders;
 	
 	$rjson = $response.Content | ConvertFrom-Json;
 	
@@ -290,7 +296,7 @@ function WebClock {
 }
 
 function DoLogin {
-	
+	$requestBody = [ordered]@{}
 	if ($script:settingsObject.savepwd -eq $true) {
 		$cred = Import-CliXml $script:credPath;
 		$loginPassword = $cred.Password;
@@ -301,17 +307,19 @@ function DoLogin {
 
 	$requestEndpoint = "AccuConfig";
 	$uri = "$($script:settingsObject.url)$($requestEndpoint)";
-	$requestString = "ACTION=Login";
-	if (-Not ($script:settingsObject.db -eq "<no database>")) {
-		$requestString = "$($requestString)&database=$($script:settingsObject.db)";
-	}
-	$requestString = "$($requestString)&userabbr=$($script:settingsObject.user)";
-	$requestString = "$($requestString)&password=$($loginPassword)";
-	$requestString = "$($requestString)&Latitude=$($script:Lat)";
-	$requestString = "$($requestString)&Longitude=$($script:Lon)";
-	$requestString = "$($requestString)&appsettings=$($script:appsettings)";
 
-	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestString -WebSession $script:session -UserAgent $script:useragent;
+	$requestBody.Add("Action","Login");
+	if (-Not ($script:settingsObject.db -eq "<no database>")) {
+		$requestBody.Add("Database","$($script:settingsObject.db)");
+	}
+	$requestBody.Add("UserAbbr","$($script:settingsObject.user)");
+	$requestBody.Add("Password","$($loginPassword)");
+	$requestBody.Add("LAT","$($script:Lat)");
+	$requestBody.Add("LONG","$($script:Lon)");
+	$requestBody.Add("AppSettings","$($script:appsettings)");
+	$requestBody.Add("UUID","$($UUID)");
+
+	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestBody -WebSession $script:session -UserAgent $script:useragent -Headers $script:requestHeaders;
 
 	$rjson = $response.Content | ConvertFrom-Json;
 	
@@ -356,6 +364,10 @@ function GetLocation {
 		$script:Lon = [string]$GeoWatcher.Position.Location.Longitude;
 	}
 	Write-Host "Ay matey! Yer reportin ye location as $($script:Lat) Latitude, $($script:Lon) Longitude.";
+}
+
+function GetDeviceID {
+	$script:UUID = (Get-CimInstance -Class Win32_ComputerSystemProduct).UUID;
 }
 
 function LoadSettings {
