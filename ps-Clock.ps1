@@ -211,7 +211,7 @@ function WebClock {
 	$uri = "$($script:settingsObject.url)$($requestEndpoint)";
 	$requestBody = [ordered]@{}
 	$requestBody.Add("Action","Add");
-	$requestBody.Add("EPCLK_GMTOFFSE","$($tzOffset)");
+	$requestBody.Add("EPCLK_GMTOFFSET","$($tzOffset)");
 	$requestBody.Add("EPCLK_STATUS","$($status)");
 	$requestBody.Add("EPCLK_PRITEMID","$($earnID)");
 	if ($status -ge 1) {
@@ -261,8 +261,8 @@ function DoLogin {
 	}
 	$requestBody.Add("UserAbbr","$($script:settingsObject.user)");
 	$requestBody.Add("Password","$($loginPassword)");
-	$requestBody.Add("LAT","$($script:Lat)");
-	$requestBody.Add("LONG","$($script:Lon)");
+	$requestBody.Add("LATITUDE","$($script:Lat)");
+	$requestBody.Add("LONGITUDE","$($script:Lon)");
 	$requestBody.Add("AppSettings","$($script:appsettings)");
 	$requestBody.Add("UUID","$($UUID)");
 
