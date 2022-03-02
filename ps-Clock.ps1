@@ -233,7 +233,7 @@ function WebClock {
 		Write-Host "Aye, Aye! Ye be clocked $($direction) at $($clockTime). $(if($($direction.ToUpper()) -eq "IN"){"Now swab the decks, ye scallywag!"}else{"Feel free to take a Caulk."})" -ForegroundColor Green;
 	} elseif ($rjson.success -eq $false) {
 		Write-Host "Arr! There be a problem clocking you $($direction). The cap'n says: $($rjson.msg)." -ForegroundColor Red;
-		$retry = Read-Host -Prompt "Do ye fancy another try?" -ForegroundColor Yellow;
+		$retry = Read-Host -Prompt "Do ye fancy another try?";
 		if ($retry.ToUpper().Substring(0,1) -eq "Y") {
 			WebClock;
 		}
