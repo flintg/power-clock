@@ -61,8 +61,12 @@ function WebClock {
 	$uri = "$($script:settingsObject.url)$($requestEndpoint)";
 	$requestBody.Add("Action","Get");
 
-	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestBody -WebSession $script:session -UserAgent $script:useragent -Headers $script:requestHeaders;
-
+	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestBody -WebSession $script:session -UserAgent $script:useragent -Headers $script:requestHeaders -SkipHttpErrorCheck;
+	[Int32]$statusCode = Select-Object -InputObject $response -ExpandProperty "StatusCode"
+	if ($statusCode -ne 200) {
+		[String]$statusDescription = Select-Object -InputObject $response -ExpandProperty "StatusDescription"
+		Write-Host "Arr! There be a hole in ye ship! ($($statusCode): $($statusDescription))" -ForegroundColor Red
+	}
 	$rjson = $response.Content | ConvertFrom-Json;
 	  
 	$cfg = $rjson.EPclk.Cfg;
@@ -226,7 +230,11 @@ function WebClock {
 	}
 	
 	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestBody -WebSession $script:session -UserAgent $script:useragent -Headers $script:requestHeaders;
-	
+	[Int32]$statusCode = Select-Object -InputObject $response -ExpandProperty "StatusCode"
+	if ($statusCode -ne 200) {
+		[String]$statusDescription = Select-Object -InputObject $response -ExpandProperty "StatusDescription"
+		Write-Host "Arr! There be a hole in ye ship! ($($statusCode): $($statusDescription))" -ForegroundColor Red
+	}
 	$rjson = $response.Content | ConvertFrom-Json;
 	
 	if ($rjson.success -eq $true) {	
@@ -267,7 +275,11 @@ function DoLogin {
 	$requestBody.Add("UUID","$($UUID)");
 
 	$response = Invoke-WebRequest -uri $uri -Method POST -Body $requestBody -WebSession $script:session -UserAgent $script:useragent -Headers $script:requestHeaders;
-
+	[Int32]$statusCode = Select-Object -InputObject $response -ExpandProperty "StatusCode"
+	if ($statusCode -ne 200) {
+		[String]$statusDescription = Select-Object -InputObject $response -ExpandProperty "StatusDescription"
+		Write-Host "Arr! There be a hole in ye ship! ($($statusCode): $($statusDescription))" -ForegroundColor Red
+	}
 	$rjson = $response.Content | ConvertFrom-Json;
 	
 	$script:success = [boolean]$rjson.success;
